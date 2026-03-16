@@ -134,6 +134,17 @@ python evaluation/benchmark.py --issue-url "https://github.com/<owner>/<repo>/is
 
 Output is JSON including judge metrics and token usage. Scoring details are in `evaluation/metrics.md`.
 
+Example (illustrative) benchmark:
+
+- Accuracy: 0.90
+- Relevance: 0.95
+- Clarity: 0.92
+- Total tokens: ~7000
+- Baseline score: ~6400
+- Agent pipeline score: ~7600
+
+In practice the agent tends to outperform the baseline on structure, implementation detail, and PR readiness while using more tokens.
+
 ## Cursor Integration
 
 - `.cursorrules` describes the intended modular structure and workflow.
