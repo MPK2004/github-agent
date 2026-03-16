@@ -1,0 +1,19 @@
+AI Open Source Contribution Mentor Agent - Cursor Rules
+------------------------------------------------------
+
+- Use modular Python design with clear separation between:
+  - `telegram/` (bot and transport)
+  - `agent/` (multi-agent orchestration and LLM logic)
+  - `storage/` (user data and simple persistence)
+  - `evaluation/` (benchmarking and metrics)
+- Load configuration and secrets strictly from environment variables
+  (use `python-dotenv` in local development, real env vars in production).
+- Never commit real secrets; only use `.env.example` as reference.
+- The Telegram bot must run via `python telegram/bot.py` in polling mode.
+- GitHub and Groq integrations should be thin wrappers around `requests`
+  and the official Groq Python client, with clear error handling.
+- Agents should be composable and side-effect free where possible,
+  returning structured Python dicts that the coordinator composes into
+  final Telegram responses.
+- Prefer small, focused functions with explicit arguments over large
+  implicit stateful objects.
