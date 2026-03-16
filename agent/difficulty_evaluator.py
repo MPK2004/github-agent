@@ -5,12 +5,12 @@ from groq import Groq
 
 
 class DifficultyEvaluator:
-    def __init__(self, api_key: str | None = None, model: str = "llama3-70b-8192") -> None:
+    def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
         key = api_key or os.getenv("GROQ_API_KEY")
         if not key:
             raise RuntimeError("GROQ_API_KEY is not set")
         self.client = Groq(api_key=key)
-        self.model = model
+        self.model = model or os.getenv("GROQ_MODEL") or "llama-3.3-70b-versatile"
 
     def evaluate_issue(self, issue: dict[str, Any], repo_readme: str, target_skill: str) -> dict[str, Any]:
         title = issue.get("title", "")
@@ -21,7 +21,8 @@ class DifficultyEvaluator:
             repo = repo_url.split("/repos/")[-1]
         system_prompt = (
             "You are an experienced software engineer helping developers contribute to open source.\n"
-            "Analyze the following GitHub issue and estimate its difficulty.\n\n"
+            "Analyze the following GitHub issue and estimate its difficulty.\n"
+            "Also explain in one short sentence why it fits (or does not fit) the target contributor skill level.\n\n"
             "Consider:\n"
             "- required programming knowledge\n"
             "- repository complexity\n"
@@ -56,12 +57,19 @@ class DifficultyEvaluator:
         content = ""
         if resp.choices and resp.choices[0].message and resp.choices[0].message.content:
             content = resp.choices[0].message.content.strip()
+        tokens = 0
+        if getattr(resp, "usage", None) is not None and getattr(resp.usage, "total_tokens", None) is not None:
+            tokens = int(resp.usage.total_tokens or 0)
         parsed = self._parse_json_like(content)
         difficulty = str(parsed.get("difficulty", "")).strip().lower()
         if difficulty not in ("beginner", "intermediate", "advanced"):
             difficulty = "intermediate"
         reason = str(parsed.get("reason", "")).strip()
-        return {"difficulty": difficulty, "reason": reason or "Difficulty estimated based on issue and repository context."}
+        return {
+            "difficulty": difficulty,
+            "reason": reason or "Estimated difficulty and fit based on issue and repository context.",
+            "_token_usage": tokens,
+        }
 
     def _parse_json_like(self, text: str) -> dict[str, Any]:
         import json

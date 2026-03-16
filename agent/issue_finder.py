@@ -41,8 +41,9 @@ class IssueFinder:
             q_parts.append(stack_q)
         q_parts.append("state:open")
         q_parts.append("is:issue")
+        q_parts.append("-is:pull-request")
 
-        query = "+".join(q_parts)
+        query = " ".join(q_parts)
         url = "https://api.github.com/search/issues"
         params = {
             "q": query,

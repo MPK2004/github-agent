@@ -5,12 +5,12 @@ from groq import Groq
 
 
 class SolutionPlanner:
-    def __init__(self, api_key: str | None = None, model: str = "llama3-70b-8192") -> None:
+    def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
         key = api_key or os.getenv("GROQ_API_KEY")
         if not key:
             raise RuntimeError("GROQ_API_KEY is not set")
         self.client = Groq(api_key=key)
-        self.model = model
+        self.model = model or os.getenv("GROQ_MODEL") or "llama-3.3-70b-versatile"
 
     def plan(self, issue: dict[str, Any], analysis: dict[str, Any], user_profile: dict | None) -> dict[str, Any]:
         title = issue.get("title", "")
@@ -55,8 +55,13 @@ class SolutionPlanner:
         content = ""
         if resp.choices and resp.choices[0].message and resp.choices[0].message.content:
             content = resp.choices[0].message.content.strip()
+        tokens = 0
+        if getattr(resp, "usage", None) is not None and getattr(resp.usage, "total_tokens", None) is not None:
+            tokens = int(resp.usage.total_tokens or 0)
         parsed = self._parse_json_like(content)
-        return self._normalize(parsed)
+        out = self._normalize(parsed)
+        out["_token_usage"] = tokens
+        return out
 
     def _normalize(self, parsed: dict[str, Any]) -> dict[str, Any]:
         steps = parsed.get("plan_steps", [])

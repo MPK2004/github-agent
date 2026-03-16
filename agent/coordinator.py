@@ -16,26 +16,35 @@ class Coordinator:
         self.solution_planner = SolutionPlanner()
         self.pr_generator = PRGenerator()
 
-    async def handle_find_issue(self, user_profile: dict) -> str:
+    async def handle_find_issue(self, user_profile: dict) -> tuple[str, list[dict[str, Any]]]:
         stack = (user_profile or {}).get("preferred_stack") or ""
         skill = (user_profile or {}).get("skill_level") or "intermediate"
         issues = self.issue_finder.search_issues(stack, limit=15)
         if not issues:
-            return "No issues found right now. Next steps will improve query logic and filtering."
+            return "No issues found right now. Next steps will improve query logic and filtering.", []
         enriched: list[tuple[dict[str, Any], dict[str, Any]]] = []
         for it in issues:
             try:
                 eval_result = self.difficulty_evaluator.evaluate_issue(it, "", skill)
-            except Exception:
-                eval_result = {"difficulty": "intermediate", "reason": "Failed to contact difficulty evaluator; using default."}
+            except Exception as e:
+                fallback_diff = skill.lower()
+                if fallback_diff not in ("beginner", "intermediate", "advanced"):
+                    fallback_diff = "intermediate"
+                eval_result = {
+                    "difficulty": fallback_diff,
+                    "reason": f"Difficulty evaluator unavailable ({type(e).__name__}). Showing best-effort results.",
+                    "_token_usage": 0,
+                }
             enriched.append((it, eval_result))
         target = skill.lower()
+        order_map = {
+            "beginner": ["beginner", "intermediate", "advanced"],
+            "intermediate": ["intermediate", "beginner", "advanced"],
+            "advanced": ["advanced", "intermediate", "beginner"],
+        }
         ordered: list[tuple[dict[str, Any], dict[str, Any]]] = []
-        for diff in ("beginner", "intermediate", "advanced"):
-            if diff == target:
-                ordered.extend([pair for pair in enriched if pair[1].get("difficulty") == diff])
-        if not ordered:
-            ordered = enriched
+        for diff in order_map.get(target, ["intermediate", "beginner", "advanced"]):
+            ordered.extend([pair for pair in enriched if pair[1].get("difficulty") == diff])
         chosen = ordered[:3]
         lines: list[str] = []
         lines.append(f"Found {len(issues)} candidate issues for stack={stack}, target_level={skill}.")
@@ -55,9 +64,13 @@ class Coordinator:
             lines.append(f"   Difficulty: {diff}")
             lines.append(f"   Why this fits you: {reason}")
             lines.append("")
-        return "\n".join(lines).strip()
+        return "\n".join(lines).strip(), [it for it, _ in chosen]
 
     async def handle_analyze_issue(self, issue_url: str, user_profile: dict | None) -> str:
+        text, _tokens = await self.handle_analyze_issue_with_usage(issue_url, user_profile)
+        return text
+
+    async def handle_analyze_issue_with_usage(self, issue_url: str, user_profile: dict | None) -> tuple[str, int]:
         from agent.issue_finder import parse_github_issue_url
 
         owner, repo, number = parse_github_issue_url(issue_url)
@@ -66,6 +79,7 @@ class Coordinator:
         analysis = self.issue_analyzer.analyze(issue, readme, user_profile)
         plan = self.solution_planner.plan(issue, analysis, user_profile)
         pr = self.pr_generator.generate(issue, analysis, plan)
+        token_usage = int(analysis.get("_token_usage", 0) or 0) + int(plan.get("_token_usage", 0) or 0) + int(pr.get("_token_usage", 0) or 0)
 
         lines: list[str] = []
         lines.append("Result (structured):")
@@ -104,5 +118,5 @@ class Coordinator:
         lines.append(pr.get("pr_description", ""))
         lines.append("")
         lines.append(f"Commit message: {pr.get('commit_message','')}")
-        return "\n".join([x for x in lines if x is not None]).strip()
+        return "\n".join([x for x in lines if x is not None]).strip(), token_usage
 
