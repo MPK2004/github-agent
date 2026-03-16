@@ -147,8 +147,7 @@ async def run_once(issue_url: str, model: str) -> RunResult:
     issue = finder.fetch_issue(owner, repo, number)
     readme = finder.fetch_repo_readme(owner, repo)
 
-    agent_text = await coord.handle_analyze_issue(issue_url, None)
-    agent_tokens = 0
+    agent_text, agent_tokens = await coord.handle_analyze_issue_with_usage(issue_url, None)
 
     baseline_text, baseline_tokens = baseline_output(
         client,
@@ -175,7 +174,7 @@ async def run_once(issue_url: str, model: str) -> RunResult:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--issue-url", required=True)
-    parser.add_argument("--model", default="llama3-70b-8192")
+    parser.add_argument("--model", default=os.getenv("GROQ_MODEL") or "llama-3.3-70b-versatile")
     parser.add_argument("--output-json", default="")
     args = parser.parse_args()
 

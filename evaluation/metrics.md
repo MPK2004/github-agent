@@ -9,7 +9,7 @@ All metric components are scaled to \(0..1\).
 - Accuracy: How correct and technically sound the guidance is, given the issue and repo README.
 - Recommendation relevance: How well the advice aligns with the issue context and avoids irrelevant suggestions.
 - Clarity: How readable and actionable the response is (structure, step-by-step guidance, concreteness).
-- Token usage: Total tokens used across baseline generation + judge + (optionally) agent calls.
+- Token usage: Total tokens used across agent calls + baseline generation + judge.
 
 ## Judge
 
