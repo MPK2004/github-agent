@@ -87,10 +87,13 @@ class Coordinator:
         lines.append("Problem summary:")
         lines.append(analysis.get("problem_summary", ""))
         lines.append("")
-        lines.append("Suggested approach:")
-        for i, step in enumerate(analysis.get("suggested_approach", []) or [], start=1):
-            lines.append(f"- {i}. {step}")
-        lines.append("")
+        merged_plan: list[str] = []
+        plan_steps = plan.get("plan_steps", []) or []
+        suggested = analysis.get("suggested_approach", []) or []
+        if plan_steps:
+            merged_plan.extend(plan_steps)
+        elif suggested:
+            merged_plan.extend(suggested)
         lines.append("Files likely involved:")
         for f in analysis.get("files_likely_involved", []) or []:
             lines.append(f"- {f}")
@@ -100,7 +103,7 @@ class Coordinator:
             lines.append(f"- {r}")
         lines.append("")
         lines.append("Solution plan:")
-        for i, step in enumerate(plan.get("plan_steps", []) or [], start=1):
+        for i, step in enumerate(merged_plan, start=1):
             lines.append(f"- {i}. {step}")
         lines.append("")
         lines.append("Test plan:")
