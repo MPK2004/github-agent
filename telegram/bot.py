@@ -5,8 +5,8 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -51,13 +51,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     profile["username"] = username
     users[user_id] = profile
     save_users(users)
-    text = (
-        "Welcome to the AI Open Source Contribution Mentor Agent.\n\n"
-        "Step 1: Choose your preferred stack:\n"
-        "- Python\n- JavaScript\n- Rust\n- AI/ML\n\n"
-        "Please reply with one of these exactly."
+    keyboard = [
+        [
+            InlineKeyboardButton("Python", callback_data="stack_Python"),
+            InlineKeyboardButton("JavaScript", callback_data="stack_JavaScript"),
+        ],
+        [
+            InlineKeyboardButton("Rust", callback_data="stack_Rust"),
+            InlineKeyboardButton("AI/ML", callback_data="stack_AI/ML"),
+        ],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "Choose your preferred stack:",
+        reply_markup=reply_markup,
     )
-    await update.message.reply_text(text)
     return PREFERRED_STACK
 
 
@@ -102,6 +110,78 @@ async def set_skill_level(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return ConversationHandler.END
 
 
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    data = query.data or ""
+    users = load_users()
+    user = update.effective_user
+    user_id = str(user.id)
+    profile = users.get(str(user_id)) or {}
+    if data.startswith("stack_"):
+        raw = data.replace("stack_", "")
+        stack_label = raw
+        if stack_label not in STACK_OPTIONS:
+            stack_label = "Python"
+        context.user_data["preferred_stack"] = stack_label
+        users[user_id] = {**profile, "username": user.username or "", "preferred_stack": stack_label}
+        save_users(users)
+        keyboard = [
+            [
+                InlineKeyboardButton("Beginner", callback_data="skill_Beginner"),
+                InlineKeyboardButton("Intermediate", callback_data="skill_Intermediate"),
+            ],
+            [
+                InlineKeyboardButton("Advanced", callback_data="skill_Advanced"),
+            ],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            f"Selected stack: {stack_label}\nNow choose skill level:",
+            reply_markup=reply_markup,
+        )
+        return SKILL_LEVEL
+    if data.startswith("skill_"):
+        level_label = data.replace("skill_", "")
+        if level_label not in SKILL_OPTIONS:
+            level_label = "Beginner"
+        level_value = level_label.lower()
+        profile["username"] = user.username or ""
+        profile["preferred_stack"] = context.user_data.get("preferred_stack", level_label)
+        profile["skill_level"] = level_value
+        users[user_id] = profile
+        save_users(users)
+        await query.edit_message_text(
+            f"Preferences saved.\nStack: {profile['preferred_stack']}\nLevel: {level_label}\n\nYou can now use /find_issue or /analyze_issue."
+        )
+        return ConversationHandler.END
+    if data.startswith("issue_"):
+        try:
+            index = int(data.split("_", 1)[1])
+        except Exception:
+            await query.edit_message_text("Issue selection is invalid. Run /find_issue again.")
+            return ConversationHandler.END
+        urls = profile.get("last_issues") or []
+        if not isinstance(urls, list) or index < 0 or index >= len(urls):
+            await query.edit_message_text("No saved issues found. Run /find_issue again.")
+            return ConversationHandler.END
+        issue_url = urls[index]
+        coordinator = Coordinator()
+        reasoning = [
+            "Step 1: Fetching issue details",
+            "Step 2: Fetching repository README",
+            "Step 3: Analyzing the problem",
+            "Step 4: Planning a solution and PR template",
+        ]
+        reasoning_text = "\n".join(reasoning)
+        await query.message.reply_text("Reasoning trace:\n" + reasoning_text)
+        result = await coordinator.handle_analyze_issue(issue_url, profile)
+        await query.message.reply_text(result)
+        return ConversationHandler.END
+    await query.edit_message_text("Unknown selection.")
+    return ConversationHandler.END
+
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Registration cancelled.")
     return ConversationHandler.END
@@ -126,8 +206,32 @@ async def find_issue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     ]
     reasoning_text = "\n".join(reasoning)
     await update.message.reply_text("Reasoning trace:\n" + reasoning_text)
-    result = await coordinator.handle_find_issue(profile)
-    await update.message.reply_text(result)
+    try:
+        text, chosen_issues = await coordinator.handle_find_issue(profile)
+        await update.message.reply_text(text)
+        if chosen_issues:
+            keyboard = []
+            for i, it in enumerate(chosen_issues):
+                title = str(it.get("title", "")) or "Issue"
+                keyboard.append(
+                    [
+                        InlineKeyboardButton(
+                            title[:60],
+                            callback_data=f"issue_{i}",
+                        )
+                    ]
+                )
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            users = load_users()
+            urls = [str(it.get("html_url", "")) for it in chosen_issues]
+            profile = users.get(user_id) or {}
+            profile["last_issues"] = urls
+            users[user_id] = profile
+            save_users(users)
+            await update.message.reply_text("Choose an issue:", reply_markup=reply_markup)
+    except Exception as e:
+        await update.message.reply_text("Error while searching GitHub issues. Check GITHUB_TOKEN and try again.")
+        await update.message.reply_text(str(e)[:1500])
 
 
 async def analyze_issue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -155,7 +259,7 @@ async def analyze_issue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def main_async() -> None:
-    load_dotenv()
+    load_dotenv(dotenv_path=BASE_DIR / ".env", override=False)
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
@@ -167,15 +271,34 @@ async def main_async() -> None:
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            PREFERRED_STACK: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_preferred_stack)],
-            SKILL_LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_skill_level)],
+            PREFERRED_STACK: [CallbackQueryHandler(button_handler, pattern="^stack_")],
+            SKILL_LEVEL: [CallbackQueryHandler(button_handler, pattern="^skill_")],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("find_issue", find_issue))
     application.add_handler(CommandHandler("analyze_issue", analyze_issue))
-    await application.run_polling()
+    application.add_handler(CallbackQueryHandler(button_handler))
+    stop_event = asyncio.Event()
+    try:
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        await stop_event.wait()
+    finally:
+        try:
+            await application.updater.stop()
+        except Exception:
+            pass
+        try:
+            await application.stop()
+        except Exception:
+            pass
+        try:
+            await application.shutdown()
+        except Exception:
+            pass
 
 
 def main() -> None:
