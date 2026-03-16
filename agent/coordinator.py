@@ -2,6 +2,9 @@ from typing import Any
 
 from agent.issue_finder import IssueFinder
 from agent.difficulty_evaluator import DifficultyEvaluator
+from agent.issue_analyzer import IssueAnalyzer
+from agent.solution_planner import SolutionPlanner
+from agent.pr_generator import PRGenerator
 
 
 class Coordinator:
@@ -9,6 +12,9 @@ class Coordinator:
         self.name = "ai_contribution_mentor"
         self.issue_finder = IssueFinder()
         self.difficulty_evaluator = DifficultyEvaluator()
+        self.issue_analyzer = IssueAnalyzer()
+        self.solution_planner = SolutionPlanner()
+        self.pr_generator = PRGenerator()
 
     async def handle_find_issue(self, user_profile: dict) -> str:
         stack = (user_profile or {}).get("preferred_stack") or ""
@@ -52,5 +58,51 @@ class Coordinator:
         return "\n".join(lines).strip()
 
     async def handle_analyze_issue(self, issue_url: str, user_profile: dict | None) -> str:
-        return "Issue analysis is not implemented yet. Next steps will add full multi-agent analysis for the provided GitHub issue."
+        from agent.issue_finder import parse_github_issue_url
+
+        owner, repo, number = parse_github_issue_url(issue_url)
+        issue = self.issue_finder.fetch_issue(owner, repo, int(number))
+        readme = self.issue_finder.fetch_repo_readme(owner, repo)
+        analysis = self.issue_analyzer.analyze(issue, readme, user_profile)
+        plan = self.solution_planner.plan(issue, analysis, user_profile)
+        pr = self.pr_generator.generate(issue, analysis, plan)
+
+        lines: list[str] = []
+        lines.append("Result (structured):")
+        lines.append("")
+        lines.append("Problem summary:")
+        lines.append(analysis.get("problem_summary", ""))
+        lines.append("")
+        lines.append("Suggested approach:")
+        for i, step in enumerate(analysis.get("suggested_approach", []) or [], start=1):
+            lines.append(f"- {i}. {step}")
+        lines.append("")
+        lines.append("Files likely involved:")
+        for f in analysis.get("files_likely_involved", []) or []:
+            lines.append(f"- {f}")
+        lines.append("")
+        lines.append("Recommended learning resources:")
+        for r in analysis.get("recommended_learning_resources", []) or []:
+            lines.append(f"- {r}")
+        lines.append("")
+        lines.append("Solution plan:")
+        for i, step in enumerate(plan.get("plan_steps", []) or [], start=1):
+            lines.append(f"- {i}. {step}")
+        lines.append("")
+        lines.append("Test plan:")
+        for t in plan.get("test_plan", []) or []:
+            lines.append(f"- {t}")
+        lines.append("")
+        lines.append("Risk notes:")
+        for rn in plan.get("risk_notes", []) or []:
+            lines.append(f"- {rn}")
+        lines.append("")
+        lines.append("PR template:")
+        lines.append(f"PR title: {pr.get('pr_title','')}")
+        lines.append("")
+        lines.append("PR description:")
+        lines.append(pr.get("pr_description", ""))
+        lines.append("")
+        lines.append(f"Commit message: {pr.get('commit_message','')}")
+        return "\n".join([x for x in lines if x is not None]).strip()
 
