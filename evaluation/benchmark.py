@@ -35,9 +35,11 @@ def compute_agent_score(accuracy: float, relevance: float, clarity: float, token
     r = max(0.0, min(1.0, float(relevance)))
     c = max(0.0, min(1.0, float(clarity)))
     t = max(1, int(token_usage))
-    raw = (a * r * c) / t
-    scaled = raw * 2_000_000
-    return _clamp_int(scaled, 1, 10000)
+    quality = (a + r + c) / 3.0
+    quality_score = quality * 9000.0
+    efficiency_penalty = t / 10.0
+    final = quality_score - efficiency_penalty
+    return _clamp_int(final, 1, 10000)
 
 
 def groq_chat(client: Groq, model: str, system: str, user: str, max_tokens: int) -> tuple[str, int]:

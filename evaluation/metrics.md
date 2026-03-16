@@ -35,10 +35,14 @@ and returns JSON:
 We compute:
 
 \[
-\text{score} = \text{clamp}_{1..10000}\left(\left(\frac{\text{accuracy} \times \text{relevance} \times \text{clarity}}{\max(1,\ \text{token\_usage})}\right)\times 2{,}000{,}000\right)
+\text{quality} = \frac{\text{accuracy} + \text{relevance} + \text{clarity}}{3}
 \]
 
-This heavily rewards quality while penalizing token usage.
+\[
+\text{score} = \text{clamp}_{1..10000}\left(\text{quality} \times 9000 - \frac{\text{token\_usage}}{10}\right)
+\]
+
+This rewards high model quality while applying a softer penalty for long outputs.
 
 ## How to run
 
